@@ -8,13 +8,23 @@ export { BROWSER_LIKE_USER_AGENT };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/**
+ * Node's fetch advertises zstd but does not decompress it, so a server that
+ * honours it (seen live: www.amazon.jobs) hands back a body that silently
+ * truncates at the first block — 1024 bytes of what looks like valid JSON,
+ * then a "Bad Unicode escape" parse error. Pinning the encodings undici can
+ * actually decode keeps every provider on a body it can read. Overridable via
+ * the per-request `headers` spread below.
+ */
+const DEFAULT_ACCEPT_ENCODING = 'gzip, deflate, br';
+
 async function fetchWithTimeout(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, method = 'GET', body = null, redirect = 'follow' } = {}, consume) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method,
-      headers: { 'user-agent': DEFAULT_USER_AGENT, ...headers },
+      headers: { 'user-agent': DEFAULT_USER_AGENT, 'accept-encoding': DEFAULT_ACCEPT_ENCODING, ...headers },
       body,
       redirect,
       signal: controller.signal,
