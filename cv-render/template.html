@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CV</title>
+  <style>
+    @font-face { font-family:"ResumeRoboto"; src:url("./fonts/Roboto-Regular.ttf") format("truetype"); font-weight:400; font-style:normal; }
+    @font-face { font-family:"ResumeRoboto"; src:url("./fonts/Roboto-Bold.ttf") format("truetype"); font-weight:700; font-style:normal; }
+    @font-face { font-family:"ResumeRobotoThin"; src:url("./fonts/Roboto-Thin.ttf") format("truetype"); font-weight:100; font-style:normal; }
+    @font-face { font-family:"ResumeSourceSans"; src:url("./fonts/SourceSansPro-Regular.otf") format("opentype"); font-weight:400; font-style:normal; }
+    @font-face { font-family:"ResumeSourceSans"; src:url("./fonts/SourceSansPro-Bold.otf") format("opentype"); font-weight:700; font-style:normal; }
+    @font-face { font-family:"ResumeSourceSansLight"; src:url("./fonts/SourceSansPro-Light.otf") format("opentype"); font-weight:300; font-style:normal; }
+
+    * { box-sizing: border-box; }
+
+    :root {
+      --resume-text: #22262d;
+      --resume-dark: #131a28;
+      --resume-muted: #4c525b;
+      --resume-light: #6f757d;
+      --resume-accent: #131a28;
+      --resume-navy: #16335f;
+      --resume-rule: #c9cdd3;
+      --page-width: 210mm;
+      --page-height: 297mm;
+      color-scheme: light;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #e6e8eb;
+      padding: 24px;
+      font-family: "ResumeSourceSans", Arial, sans-serif;
+    }
+
+    .resume-document {
+      width: var(--page-width);
+      min-height: var(--page-height);
+      margin: 0 auto;
+      background: #ffffff;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.2);
+      color: var(--resume-text);
+      font-family: "ResumeSourceSans", Arial, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.4;
+      padding: 15mm 18mm 16mm;
+    }
+
+    .resume-header { text-align: center; padding-bottom: 0; margin-bottom: 8px; }
+    .resume-name {
+      margin: 0; color: var(--resume-dark);
+      font-family: "ResumeRoboto", Arial, sans-serif;
+      font-size: 28px; line-height: 1.08; font-weight: 700; letter-spacing: 0.3px;
+    }
+    .resume-title {
+      margin-top: 7px; color: var(--resume-muted);
+      font-family: "ResumeRoboto", Arial, sans-serif; font-size: 10px; letter-spacing: 0.3px;
+    }
+    .resume-meta {
+      margin-top: 8px; color: var(--resume-text);
+      font-family: "ResumeRoboto", Arial, sans-serif; font-size: 10px; line-height: 1.3;
+    }
+    .resume-meta a { color: inherit; text-decoration: none; }
+    .resume-meta .sep { color: var(--resume-rule); padding: 0 6px; }
+    .resume-meta .loc { font-weight: 700; color: var(--resume-dark); }
+
+    .resume-section { margin-top: 16px; break-inside: auto; }
+    .section-title {
+      display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
+      color: var(--resume-navy); font-family: "ResumeSourceSans", Arial, sans-serif;
+      font-size: 13.5px; line-height: 1.1; font-weight: 700; letter-spacing: 1.4px;
+      text-transform: uppercase; break-after: avoid; page-break-after: avoid;
+    }
+    .section-title span {
+      display: inline-block; padding-left: 9px;
+      border-left: 3px solid var(--resume-navy); flex: 0 0 auto;
+    }
+    .section-title::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--resume-rule); }
+
+    .summary { color: var(--resume-text); font-size: 11px; line-height: 1.45; }
+    .summary p { margin: 0 0 8px; }
+    .summary p:last-child { margin-bottom: 0; }
+
+    .strengths, .initiatives { list-style: none; margin: 0; padding: 0; display: block; }
+    .strength, .initiative {
+      font-size: 11px; line-height: 1.45; margin: 0 0 6px; padding-left: 13px;
+      position: relative; break-inside: avoid; page-break-inside: avoid;
+    }
+    .initiative { margin-bottom: 7px; }
+    .strength:last-child, .initiative:last-child { margin-bottom: 0; }
+    .strength::before, .initiative::before {
+      content: ""; position: absolute; left: 0; top: 6px; width: 4px; height: 4px;
+      border-radius: 50%; background: var(--resume-navy);
+    }
+    .strength .label, .initiative .label {
+      color: var(--resume-dark); font-family: "ResumeSourceSans", Arial, sans-serif; font-weight: 700;
+    }
+    .strength .desc, .initiative .desc { color: var(--resume-text); }
+
+    .impact-bullets { margin: 0; padding: 0 0 0 16px; font-size: 11px; line-height: 1.45; }
+    .impact-bullets li { margin: 0 0 5px; padding-left: 3px; break-inside: avoid; page-break-inside: avoid; }
+    .impact-bullets li:last-child { margin-bottom: 0; }
+    .impact-bullets li::marker { color: var(--resume-navy); }
+
+    .entry-group { margin-top: 14px; }
+    .entry-group:first-of-type { margin-top: 0; }
+    .entry-heading {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 18px;
+      padding-bottom: 0; margin-bottom: 5px; break-after: avoid; page-break-after: avoid;
+    }
+    .role-heading, .education-heading {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 18px;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .entry-company, .education-school {
+      margin: 0; color: var(--resume-dark); font-family: "ResumeSourceSans", Arial, sans-serif;
+      font-size: 13px; font-weight: 700; line-height: 1.2; min-width: 0; letter-spacing: 0.2px;
+    }
+    .entry-location, .education-location {
+      color: var(--resume-muted); font-size: 10.5px; font-style: italic; white-space: nowrap; flex-shrink: 0;
+    }
+    .role { margin-top: 9px; }
+    .role-title, .education-degree {
+      margin: 0; color: var(--resume-dark); font-family: "ResumeSourceSans", Arial, sans-serif;
+      font-size: 10.5px; font-weight: 700; line-height: 1.25; letter-spacing: 0.4px; min-width: 0;
+    }
+    .role-dates, .education-dates {
+      color: var(--resume-navy); font-size: 10px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
+    }
+    .role-bullets {
+      margin: 4px 0 0; padding: 0 0 0 16px; color: var(--resume-text); font-size: 10.8px; line-height: 1.42;
+    }
+    .role-bullets li { margin: 0 0 3px; padding-left: 3px; break-inside: avoid; page-break-inside: avoid; }
+    .role-bullets li:last-child { margin-bottom: 0; }
+    .role-bullets li::marker { color: var(--resume-navy); }
+    .role-bullets strong, .impact-bullets strong, .role-bullets b, .impact-bullets b {
+      color: var(--resume-navy); font-weight: 700;
+    }
+
+    .education-entry { margin-top: 11px; break-inside: avoid; page-break-inside: avoid; }
+    .education-entry:first-of-type { margin-top: 0; }
+    .education-heading + .education-heading { margin-top: 2px; }
+    .beyond { margin: 11px 0 0; color: var(--resume-muted); font-size: 10.5px; font-style: italic; line-height: 1.45; }
+
+    .scope-block { margin: 9px 0 0; font-size: 11px; line-height: 1.5; }
+    .scope-block:last-child { margin-bottom: 0; }
+    .scope-block .scope-label {
+      color: var(--resume-dark); font-weight: 700; letter-spacing: 0.2px;
+    }
+    .scope-block .scope-label::after { content: "\00a0\2014\00a0"; color: var(--resume-rule); font-weight: 400; }
+    .scope-block .dot { color: var(--resume-navy); padding: 0 5px; font-weight: 700; }
+    .scope-block b { color: var(--resume-navy); font-weight: 700; }
+
+    @page { size: A4; margin: 15mm 18mm; }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .resume-document { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: 0; }
+      .section-title, .role-heading { break-after: avoid; page-break-after: avoid; }
+      .strength, .initiative, .impact-bullets li, .role-bullets li, .education-entry {
+        break-inside: avoid; page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <article class="resume-document">
+{{BODY}}
+  </article>
+</body>
+</html>
