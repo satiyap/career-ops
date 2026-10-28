@@ -168,8 +168,6 @@ documents/*
 # PII (e.g. cv/jane-doe-master-cv.pdf). #1723
 data/intake-state.json
 
-# Personal user-layer files (contain PII) — never commit
-modes/_brief.md
-modes/_custom.md
+# Personal scan data — never commit
 data/portal-health.tsv
 data/scan-runs.tsv

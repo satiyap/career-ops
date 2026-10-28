@@ -2,7 +2,7 @@
 /**
  * render-cv.mjs — cv.md → house-style HTML (and optionally PDF). Zero LLM tokens.
  *
- *   node cv-render/render-cv.mjs                      # cv.md  → output/cv-master.html
+ *   node cv-render/render-cv.mjs                      # cv.md  → output/cv-{firstname}-engineering-leadership-master.html
  *   node cv-render/render-cv.mjs --pdf                # also renders the PDF via Playwright
  *   node cv-render/render-cv.mjs --in x.md --out y.html
  *
@@ -40,7 +40,7 @@ const flag = (name, fallback) => {
   return i === -1 ? fallback : argv[i + 1];
 };
 const IN = resolve(ROOT, flag('in', 'cv.md'));
-const OUT = resolve(ROOT, flag('out', 'output/cv-master.html'));
+const OUT_FLAG = flag('out', null);
 const TEMPLATE = resolve(HERE, 'template.html');
 const WANT_PDF = argv.includes('--pdf');
 
@@ -270,7 +270,12 @@ const body = [
   .filter(Boolean)
   .join('\n');
 
-const html = readFileSync(TEMPLATE, 'utf8').replace('{{BODY}}', body);
+// Name comes from cv.md so no personal data lives in this script or the template.
+const firstName = (doc.name.split(/\s+/)[0] || 'cv').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const OUT = resolve(ROOT, OUT_FLAG ?? `output/cv-${firstName}-engineering-leadership-master.html`);
+const html = readFileSync(TEMPLATE, 'utf8')
+  .replace('{{TITLE}}', esc(`${doc.name} — Engineering Leadership CV`))
+  .replace('{{BODY}}', body);
 writeFileSync(OUT, html);
 console.log(`✓ ${IN.replace(ROOT + '/', '')} → ${OUT.replace(ROOT + '/', '')}`);
 
