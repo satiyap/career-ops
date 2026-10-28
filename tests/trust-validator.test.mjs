@@ -1,8 +1,10 @@
-#!/usr/bin/env node
 // @ts-check
 /**
- * test-trust-validator.mjs — Comprehensive test suite for trust validation.
- * Run: node test-trust-validator.mjs
+ * tests/trust-validator.test.mjs — Comprehensive test suite for trust validation.
+ * Run: node test-all.mjs --only trust-validator
+ *      Running the file directly prints the same ✅/❌ lines, but a
+ *      discovered suite reports through the shared counters and never
+ *      exits — so a direct run returns 0 even when assertions fail.
  *
  * Tests cover:
  *   - buildTrustValidator: disabled/enabled, config merging
@@ -330,6 +332,18 @@ section('buildTrustValidator — Rule 4: ATS allowlist bypasses mismatch');
   const v = buildTrustValidator({ enabled: true });
   const r = v({ url: 'https://acme.ashbyhq.com/jobs', company: 'Acme' });
   assert(!r.flags.includes('company_domain_mismatch'), 'ashbyhq.com → ATS allowlist, no mismatch');
+}
+
+{
+  const v = buildTrustValidator({ enabled: true });
+  const r = v({ url: 'https://recruiting.paylocity.com/Recruiting/Jobs/Details/4001', company: 'Acme' });
+  assert(!r.flags.includes('company_domain_mismatch'), 'paylocity.com → ATS allowlist, no mismatch');
+}
+
+{
+  const v = buildTrustValidator({ enabled: true });
+  const r = v({ url: 'https://join.com/companies/acme/15402839', company: 'Acme' });
+  assert(!r.flags.includes('company_domain_mismatch'), 'join.com → ATS allowlist, no mismatch');
 }
 
 section('buildTrustValidator — Rule 4: empty company → no mismatch flag');

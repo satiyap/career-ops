@@ -20,7 +20,7 @@ const FIXTURE_AVATAR = join(ROOT, 'tests', 'fixtures', 'avatar-8x8.png');
 
 // ── ledger round-trip ────────────────────────────────────────────────────────
 {
-  const e = { n: 7, level: 'handle', handle: 'someone', role: 'ML Engineer', sector: 'Fintech', geo: 'remote EU', weeks: 6, link: 'https://github.com/santifer/career-ops/issues/9', withdrawn: false };
+  const e = { n: 7, level: 'handle', handle: 'someone', role: 'ML Engineer', sector: 'Fintech', geo: 'remote EU', weeks: 6, link: 'https://github.com/career-ops-hq/career-ops/issues/9', withdrawn: false };
   const parsed = parseLedger(ledgerLine(e))[0];
   if (parsed && parsed.n === 7 && parsed.handle === 'someone' && parsed.weeks === 6 && parsed.role === 'ML Engineer' && parsed.sector === 'Fintech') {
     pass('ledger line round-trips through parseLedger');
@@ -79,7 +79,7 @@ const FIXTURE_AVATAR = join(ROOT, 'tests', 'fixtures', 'avatar-8x8.png');
   execFileSync(process.execPath, [join(ROOT, 'hired-wall-build.mjs'), '--add',
     '--root', dir, '--level', 'role',
     '--role', 'Dev" --> <img onerror=x>', '--story', 'a "quoted" story --> with terminators',
-    '--link', 'https://github.com/santifer/career-ops/issues/99',
+    '--link', 'https://github.com/career-ops-hq/career-ops/issues/99',
     '--avatar-fixture', FIXTURE_AVATAR]);
   const out = readFileSync(join(dir, 'HIRED.md'), 'utf8');
   const entries = parseLedger(out);
@@ -107,6 +107,33 @@ const FIXTURE_AVATAR = join(ROOT, 'tests', 'fixtures', 'avatar-8x8.png');
   rmSync(dir, { recursive: true, force: true });
 }
 
+// ── writing is opt-in: no --rebuild/--add means no writes (#4896) ───────────
+{
+  const dir = mkdtempSync(join(tmpdir(), 'hired-wall-'));
+  mkdirSync(join(dir, 'docs'), { recursive: true });
+  const wall = '# W\n\n<!-- ENTRIES -->\n\n<!-- /ENTRIES -->\n';
+  const countJson = '{\n  "count": 0,\n  "updatedAt": "2000-01-01"\n}\n';
+  writeFileSync(join(dir, 'HIRED.md'), wall);
+  writeFileSync(join(dir, 'docs', 'hired-count.json'), countJson);
+  writeFileSync(join(dir, 'docs', 'hired-wall.svg'), 'old-svg');
+  const unchanged = () => readFileSync(join(dir, 'HIRED.md'), 'utf8') === wall
+    && readFileSync(join(dir, 'docs', 'hired-count.json'), 'utf8') === countJson
+    && readFileSync(join(dir, 'docs', 'hired-wall.svg'), 'utf8') === 'old-svg';
+  for (const extra of [[], ['--fetch-avatars']]) {
+    let refused = false;
+    try {
+      execFileSync(process.execPath, [join(ROOT, 'hired-wall-build.mjs'), '--root', dir, ...extra], { stdio: 'pipe' });
+    } catch { refused = true; }
+    const label = ['--root', ...extra].join(' ');
+    if (refused && unchanged()) pass(`no action flag (${label}) exits non-zero and writes nothing`);
+    else fail(`no action flag (${label}): refused=${refused}, files unchanged=${unchanged()}`);
+  }
+  execFileSync(process.execPath, [join(ROOT, 'hired-wall-build.mjs'), '--rebuild', '--root', dir], { stdio: 'pipe' });
+  if (readFileSync(join(dir, 'docs', 'hired-wall.svg'), 'utf8').startsWith('<svg')) pass('--rebuild still writes the derived surfaces');
+  else fail('--rebuild did not regenerate docs/hired-wall.svg');
+  rmSync(dir, { recursive: true, force: true });
+}
+
 // ── share flow: tracker detection, weeks math, prefilled URL ────────────────
 {
   const tracker = ['| # | Fecha | Empresa | Puesto | Score | Estado | PDF | Report | Notas |',
@@ -123,7 +150,7 @@ const FIXTURE_AVATAR = join(ROOT, 'tests', 'fixtures', 'avatar-8x8.png');
   else fail(`weeks math wrong: ${weeks}`);
 
   const url = buildIssueUrl({ role: 'Data Engineer', story: 'a & b', feature: '', timeToHire: '7 weeks', anonymity: 'role' });
-  if (url.startsWith('https://github.com/santifer/career-ops/issues/new?') &&
+  if (url.startsWith('https://github.com/career-ops-hq/career-ops/issues/new?') &&
       url.includes('template=i-got-hired.yml') &&
       url.includes('anonymity=Role+and+location+only') &&
       url.includes('story=a+%26+b')) {

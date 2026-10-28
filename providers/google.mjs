@@ -1,205 +1,145 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { coerceId } from './_ids.mjs';
+import { htmlToText } from './_html-to-text.mjs';
 
-// Google provider — reads the server-rendered search results on
-// google.com/about/careers/applications. Google retired the old
-// careers.google.com/api/v3 JSON API (it now 404s), but the results page still
-// ships the full result set inline as a Wiz `AF_initDataCallback` chunk keyed
-// `ds:1`, so no browser and no LLM are needed:
+// Google provider — Google Careers is server-rendered, so the results page HTML
+// contains every job link:
+//   GET https://www.google.com/about/careers/applications/jobs/results/?q=<kw>&location=United%20States&sort_by=date
+//   -> HTML with one card per posting, closed by <a href="jobs/results/{id}-{slug}">
+// No JSON API and no XHR (data is in the document), so we run phrase queries and
+// let scan.mjs's title filter cut.
 //
-//   GET https://www.google.com/about/careers/applications/jobs/results?…
-//   → …AF_initDataCallback({key: 'ds:1', hash: '2', data:[[ …jobs… ], null, TOTAL, PAGE_SIZE]});
+// Each card carries the posting's real title (<h3>) and an "Employer | location;
+// location; +2 more" line. The EMPLOYER is not always Google: the same results
+// list YouTube, DeepMind and other Alphabet companies' postings, so the card's
+// employer is the company, not the portals.yml entry name (CodeRabbit, #4078).
+// A card without that markup falls back to the entry name, the link's
+// aria-label or slug for the title, and a blank location.
 //
-// Each job record is a positional array:
-//   [0] id · [1] title · [2] sign-in/apply URL · [3] responsibilities (HTML)
-//   [4] qualifications (HTML) · [7] company · [9] locations ·
-//   [10] description (HTML) · [12] publish timestamp [seconds, nanos]
+// FIRST PAGE ONLY, and that is a robots.txt constraint, not an oversight.
+// google.com/robots.txt disallows the paginated results URLs for every crawler:
 //
-// A tracked_companies entry narrows the (very large) global board with a
-// `google:` config block whose keys are passed through as query params:
+//   Disallow: /about/careers/applications/jobs/results?page=
+//   Disallow: /about/careers/applications/jobs/results/?page=
+//   Disallow: /about/careers/applications/jobs/results?*&page=
+//   Disallow: /about/careers/applications/jobs/results/?*&page=
 //
-//   - name: Google
-//     provider: google
-//     careers_url: https://www.google.com/about/careers/applications/jobs/results
-//     google:
-//       location: India        # free-text location facet (repeatable via array)
-//       sort_by: date          # 'date' (default here) or 'relevance'
-//       q: engineering         # optional keyword filter
+// with no Allow under /about/careers that could take precedence (RFC 9309 §2.2.2
+// longest-match). career-ops declines Lagou for the same reason — see
+// docs/SUPPORTED_JOB_BOARDS.md: "The project does not route around that stated
+// restriction." So this provider never sends `page`, which leaves one results
+// page per query (~20 postings). `sort_by=date` makes that page the NEWEST
+// postings, which is what a scanner run on a schedule wants; pages beyond the
+// first are unreachable without the disallowed parameter, so `max_pages` does
+// not apply to this provider.
 //
-// Page size is fixed by Google at 20; we page via `page` (1-based) and stop as
-// soon as the reported total is covered.
+// Config (portals.yml):
+//   provider: google
+//   google:
+//     location: "United States"      # optional
+//     queries: ["business strategy", "business operations", ...]
 
-const PAGE_SIZE = 20; // Google's fixed results-per-page
-const MAX_PAGES = 25; // safety cap — at most 500 postings per entry
-const ORIGIN = 'https://www.google.com';
-const RESULTS_PATH = '/about/careers/applications/jobs/results';
+const BASE = 'https://www.google.com/about/careers/applications/jobs/results/';
+// One request per query: no `page` parameter exists in any URL this provider builds.
+// The anchor that closes each card; the markup since the previous anchor is that
+// card. Google serves the href relative ("jobs/results/…"); a path prefix is
+// tolerated, and the URL is rebuilt from BASE either way.
+const ANCHOR_RE = /<a\b[^>]*?\bhref="(?:[^"]*\/)?jobs\/results\/(\d+)-([a-z0-9-]+)[^"]*"[^>]*>/g;
+const H3_RE = /<h3\b[^>]*>([^<]+)<\/h3>/g;
+const EMPLOYER_LINE_RE = /<p class="l103df">([\s\S]*?)<\/p>/g;
+const ARIA_TITLE_RE = /\baria-label="Learn more about ([^"]+)"/;
+// "+2 more" is Google collapsing the rest of the list, not a place.
+const MORE_RE = /^\+\d+ more$/;
+const DEFAULT_QUERIES = [
+  'business strategy', 'business operations', 'strategy and operations',
+  'corporate development', 'financial planning',
+];
 
-/** @param {import('./_types.js').PortalEntry & {google?: Record<string, unknown>}} entry */
-function buildUrl(entry, page) {
-  const cfg = entry.google && typeof entry.google === 'object' ? entry.google : {};
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(cfg)) {
-    if (v == null) continue;
-    // Google's facets repeat the bare key (location=India&location=Ireland);
-    // there is no `key[]` bracket form here.
-    if (Array.isArray(v)) for (const item of v) params.append(k, String(item));
-    else params.append(k, String(v));
-  }
-  if (!params.has('sort_by')) params.set('sort_by', 'date');
-  params.set('page', String(page));
-  return `${ORIGIN}${RESULTS_PATH}?${params.toString()}`;
+function getConfig(entry) {
+  const c = entry.google || {};
+  const queries = Array.isArray(c.queries) && c.queries.length ? c.queries : DEFAULT_QUERIES;
+  return { location: c.location || 'United States', queries };
 }
 
-// Pull the `data:[…]` array out of the ds:1 AF_initDataCallback chunk by
-// scanning for its balanced bracket span — the chunk sits inside a <script>
-// with sibling chunks, so a regex would over-match.
-function extractDs1(html) {
-  const key = html.indexOf("key: 'ds:1'");
-  if (key < 0) return null;
-  const start = html.indexOf('data:', key);
-  if (start < 0) return null;
-  const open = html.indexOf('[', start);
-  if (open < 0) return null;
-  let depth = 0;
-  let end = -1;
-  let inStr = false;
-  let esc = false;
-  for (let i = open; i < html.length; i++) {
-    const c = html[i];
-    if (esc) {
-      esc = false;
-      continue;
-    }
-    if (c === '\\') {
-      esc = true;
-      continue;
-    }
-    if (c === '"') inStr = !inStr;
-    if (inStr) continue;
-    if (c === '[') depth++;
-    else if (c === ']') {
-      depth--;
-      if (depth === 0) {
-        end = i + 1;
-        break;
+function titleFromSlug(slug) {
+  return slug.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Card text goes through the shared pipeline, never a local strip-then-decode:
+// stripping tags before decoding lets "&lt;script&gt;" come back out as a live
+// "<script>" (CodeQL js/incomplete-multi-character-sanitization on #4078).
+const text = (/** @type {string} */ s) => htmlToText(s);
+
+/** Last match of a global regex in `s`, or null. */
+function lastMatch(/** @type {RegExp} */ re, /** @type {string} */ s) {
+  let last = null;
+  for (const m of s.matchAll(re)) last = m;
+  return last;
+}
+
+/**
+ * Parse one results page into its cards.
+ *
+ * @param {string} html
+ * @returns {{id: string, slug: string, title: string, employer: string, locations: string[]}[]}
+ */
+export function parseResultsPage(html) {
+  const cards = [];
+  let prevEnd = 0;
+  for (const a of String(html).matchAll(ANCHOR_RE)) {
+    const [tag, id, slug] = a;
+    const card = html.slice(prevEnd, a.index);
+    prevEnd = /** @type {number} */ (a.index) + tag.length;
+    const h3 = lastMatch(H3_RE, card);
+    const aria = tag.match(ARIA_TITLE_RE);
+    const title = (h3 && text(h3[1])) || (aria && text(aria[1])) || titleFromSlug(slug);
+    const line = lastMatch(EMPLOYER_LINE_RE, card);
+    let employer = '';
+    let locations = [];
+    if (line) {
+      const sep = line[1].indexOf('|');
+      if (sep !== -1) {
+        employer = text(line[1].slice(0, sep));
+        locations = text(line[1].slice(sep + 1)).split(';').map((l) => l.trim()).filter((l) => l && !MORE_RE.test(l));
       }
     }
+    cards.push({ id, slug, title, employer, locations });
   }
-  if (end < 0) return null;
-  // The inline script escapes = and & as = / &; JSON.parse handles
-  // the rest of the escaping natively.
-  const raw = html.slice(open, end).replace(/\\u003d/g, '=').replace(/\\u0026/g, '&');
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-// Google links a posting as /jobs/results/{id}-{slugified-title}. The slug is
-// cosmetic — Google resolves on the numeric id — but we build the real one so
-// the URL matches what a human would copy out of the browser.
-function slugify(title) {
-  return String(title || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-// [12] is a protobuf Timestamp as [seconds, nanos].
-function toEpochMs(stamp) {
-  if (!Array.isArray(stamp) || typeof stamp[0] !== 'number') return undefined;
-  return stamp[0] * 1000;
-}
-
-function firstLocation(locations) {
-  if (!Array.isArray(locations) || !locations.length) return '';
-  const names = locations.map((l) => (Array.isArray(l) ? l[0] : '')).filter(Boolean);
-  return names.join(' | ');
-}
-
-function stripHtml(s) {
-  if (typeof s !== 'string') return '';
-  return s
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// The list payload already carries the full description, so building it costs
-// no extra request — this stays zero-token and feeds scan.mjs's content_filter.
-function description(rec) {
-  const parts = [rec[10], rec[3], rec[4]].map((f) => (Array.isArray(f) ? f[1] : f));
-  return stripHtml(parts.filter(Boolean).join(' '));
+  return cards;
 }
 
 /** @type {Provider} */
+
 export default {
   id: 'google',
 
   detect(entry) {
-    const url = entry.api || entry.careers_url || '';
-    if (typeof url !== 'string') return null;
-    try {
-      const parsed = new URL(url);
-      const host = parsed.host.toLowerCase();
-      // Match on host + path, never a bare path segment, so a spoofed URL on
-      // another host can't claim this provider.
-      if (host === 'careers.google.com') return { url };
-      if (
-        (host === 'www.google.com' || host === 'google.com') &&
-        parsed.pathname.startsWith('/about/careers/applications')
-      ) {
-        return { url };
-      }
-    } catch {
-      /* not an absolute URL */
-    }
-    return null;
+    return entry.google ? { url: BASE } : null;
   },
 
   async fetch(entry, ctx) {
-    const jobs = [];
-    const seen = new Set();
-    const cap = Math.min(MAX_PAGES, ctx.maxPages ?? MAX_PAGES);
-    let total = Infinity;
-
-    for (let page = 1; page <= cap; page++) {
-      const html = await ctx.fetchText(buildUrl(entry, page), { redirect: 'follow' });
-      const data = extractDs1(html);
-      if (!data) break; // markup changed or a challenge page was served
-      const records = Array.isArray(data[0]) ? data[0] : [];
-      if (typeof data[2] === 'number') total = data[2];
-      if (records.length === 0) break;
-
-      let fresh = 0;
-      for (const rec of records) {
-        if (!Array.isArray(rec)) continue;
-        const id = rec[0];
-        const title = typeof rec[1] === 'string' ? rec[1].trim() : '';
-        if (!id || !title) continue;
-        const url = `${ORIGIN}${RESULTS_PATH}/${id}-${slugify(title)}`;
-        if (seen.has(url)) continue;
-        seen.add(url);
-        fresh++;
-        jobs.push({
+    const { location, queries } = getConfig(entry);
+    // A probe only needs to know the board answers, so it spends one query.
+    const probing = Number(/** @type {any} */ (ctx)?.maxPages) > 0;
+    const byId = new Map();
+    for (const q of (probing ? queries.slice(0, 1) : queries)) {
+      // URLSearchParams, not hand-built encodeURIComponent: q and location come from
+      // portals.yml, and URLSearchParams never throws on a malformed string.
+      const url = `${BASE}?${new URLSearchParams({ q: String(q), location: String(location), sort_by: 'date' })}`;
+      const html = await ctx.fetchText(url, { redirect: 'error' });
+      for (const { id, slug, title, employer, locations } of parseResultsPage(html)) {
+        if (byId.has(id)) continue;
+        byId.set(id, {
           title,
-          url,
-          company: typeof rec[7] === 'string' && rec[7] ? rec[7] : entry.name,
-          location: firstLocation(rec[9]),
-          description: description(rec),
-          postedAt: toEpochMs(rec[12]),
+          url: `${BASE}${id}-${slug}`,
+          company: employer || entry.name,
+          location: locations.join('; '),
+          ...(coerceId(id) ? { externalId: /** @type {string} */ (coerceId(id)) } : {}),
         });
       }
-
-      if (fresh === 0) break; // page param ignored / results looped
-      if (jobs.length >= total) break;
-      if (records.length < PAGE_SIZE) break; // last page
     }
-    return jobs;
+    return [...byId.values()];
   },
 };
